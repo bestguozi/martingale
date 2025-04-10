@@ -50,7 +50,7 @@
     pnpm install
     ```
 4.  **配置环境变量:**
-    *   复制 `.env.example` 文件为 `.env`。
+    *   复制 `env.example` 文件为 `.env`。
     *   在 `.env` 文件中配置你的 MySQL 数据库连接字符串 (`DATABASE_URL`)。
     ```dotenv
     # .env
@@ -62,25 +62,6 @@
     ```bash
     npx prisma migrate dev --name init
     ```
-6.  **配置 API 密钥:**
-    *   创建 `config/secrets.json` 文件 (此文件应被 `.gitignore` 忽略)。
-    *   按照以下格式添加你的交易所 API 密钥。`apiKeyId` 必须与数据库中 `ApiKeys` 表的记录相对应。
-    ```json
-    // config/secrets.json
-    {
-      "apiKeyId1": { // 这个 ID 对应数据库中的 apiKeyId
-        "apiKey": "YOUR_EXCHANGE_API_KEY",
-        "secret": "YOUR_EXCHANGE_SECRET",
-        "password": "YOUR_API_PASSWORD_IF_ANY" // 可选
-      },
-      "apiKeyId2": {
-        "apiKey": "ANOTHER_API_KEY",
-        "secret": "ANOTHER_SECRET"
-      }
-      // ...更多用户的密钥
-    }
-    ```
-    *   **重要:** 你需要先通过其他方式（例如直接操作数据库或未来的管理界面）在 `Users` 和 `ApiKeys` 表中创建用户和对应的 API Key 元数据记录，然后才能在 `secrets.json` 中使用相应的 `apiKeyId`。
 
 ## 运行程序
 
@@ -95,13 +76,11 @@ node app.js
 ## 配置说明
 
 *   **`.env`:** 用于存储非敏感的核心配置，如数据库连接信息。
-*   **`config/secrets.json`:** **(必须保密且不提交到 Git)** 用于存储敏感的交易所 API 密钥。通过数据库中的 `apiKeyId` 关联。
 *   **数据库:** 用户的策略参数（如交易对、马丁格尔参数等）存储在数据库的 `Strategies` 和 `StrategyParameters` 表中。
 
 ## 安全
-
-*   敏感的 API 私钥和密码存储在本地的 `config/secrets.json` 文件中，该文件不应被版本控制。
-*   数据库仅存储 API Key 的元数据（如公钥、用户关联信息），不存储完整的敏感凭证。
+*   请确保你的私钥加密KEY的安全。如果已外泄，请立即到交易所删除API KEY.确保账户安全
+*   数据库仅存储 API Key 的元数据（如公钥、私钥(加密)用户关联信息），不存储完整的敏感凭证。
 *   所有关键操作都会被记录到数据库的 `OperationLogs` 表中，以供审计。
 
 ## 项目状态 (截至 2025-04-09)
