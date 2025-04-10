@@ -1,0 +1,99 @@
+// schema.prisma
+// 数据库连接配置
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL") // 从 .env 文件读取数据库连接字符串
+}
+
+// Prisma客户端生成器配置
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 用户表 - 存储系统用户信息和交易所API凭证
+model User {
+  id          Int      @id @default(autoincrement()) // 自增主键ID
+  username    String   @unique // 用户名，系统唯一标识
+  // passwordHash String? // 预留字段：密码哈希(如需用户登录)
+  exchangeId  String?  @map("exchange_id") // 关联的交易所ID
+  apiKey      String?  // 交易所API公钥(公开可分享)
+  apiSecret   String?  // 加密存储的交易所API私钥
+  apiPassword String?  // 加密存储的交易所API密码(如需)
+  description String?  // 用户描述信息
+  isApiActive Boolean  @default(true) @map("is_api_active") // API是否激活
+  createdAt   DateTime @default(now()) @map("created_at") // 创建时间
+  strategies  Strategy[] // 用户关联的策略列表
+  logs        OperationLog[] @relation("UserLogs") // 用户操作日志
+
+  @@map("users") // 数据库实际表名
+}
+
+// 策略表 - 存储用户创建的网格交易策略
+model Strategy {
+  id            Int      @id @default(autoincrement()) // 策略ID
+  userId        Int // 所属用户ID
+  name          String // 策略名称
+  symbol        String // 交易对符号(如BTC/USDT)
+  strategyType  String   @default("martingale") @map("strategy_type") // 策略类型(默认为马丁格尔)
+  isActive      Boolean  @default(false) @map("is_active") // 是否激活
+  createdAt     DateTime @default(now()) @map("created_at") // 创建时间
+  updatedAt     DateTime @updatedAt @map("updated_at") // 最后更新时间
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade) // 关联用户
+  parameters    StrategyParameters? // 策略参数配置
+  state         StrategyState? // 策略运行时状态
+  logs          OperationLog[] @relation("StrategyLogs") // 策略操作日志
+
+  @@map("strategies") // 数据库实际表名
+}
+
+// 策略参数表 - 存储网格策略的具体参数配置
+model StrategyParameters {
+  strategyId        Int      @id @map("strategy_id") // 关联的策略ID
+  initialPrice      Decimal? @db.Decimal(20, 8) @map("initial_price") // 初始价格(可选)
+  priceDropPercent  Decimal  @db.Decimal(10, 4) @map("price_drop_percent") // 价格下跌百分比触发买入
+  levels            Int // 网格层级数量
+  initialAmount     Decimal  @db.Decimal(20, 8) @map("initial_amount") // 初始买入金额
+  amountMultiplier  Decimal  @db.Decimal(10, 4) @map("amount_multiplier") // 金额乘数(马丁格尔系数)
+  takeProfit        Decimal  @db.Decimal(10, 4) @map("take_profit") // 止盈百分比
+  stopLoss          Decimal  @db.Decimal(10, 4) @map("stop_loss") // 止损百分比
+  checkInterval     Int      @default(60000) @map("check_interval") // 检查间隔(毫秒)
+  strategy          Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade) // 关联策略
+
+  @@map("strategy_parameters") // 数据库实际表名
+}
+
+// 策略状态表 - 记录策略运行时状态和持仓信息
+model StrategyState {
+  strategyId          Int      @id @map("strategy_id") // 关联的策略ID
+  isRunning           Boolean  @default(false) @map("is_running") // 策略是否正在运行
+  openOrders          Json?    @map("open_orders") // 当前未成交订单(JSON格式)
+  positions           Json?    @map("positions") // 当前持仓信息(JSON格式)
+  martinLevels        Json?    @map("martin_levels") // 马丁格尔层级信息
+  martinAmounts       Json?    @map("martin_amounts") // 马丁格尔各层金额
+  totalInvested       Decimal  @default(0) @db.Decimal(20, 8) @map("total_invested") // 累计投入金额
+  totalAmount         Decimal  @default(0) @db.Decimal(20, 8) @map("total_amount") // 累计买入数量
+  averageCost         Decimal  @default(0) @db.Decimal(20, 8) @map("average_cost") // 平均成本价
+  takeProfitPrice     Decimal? @db.Decimal(20, 8) @map("take_profit_price") // 止盈触发价格
+  stopLossPrice       Decimal? @db.Decimal(20, 8) @map("stop_loss_price") // 止损触发价格
+  takeProfitOrderId   String?  @map("take_profit_order_id") // 止盈订单ID
+  lastError           String?  @db.Text @map("last_error") // 最后错误信息
+  updatedAt           DateTime @updatedAt @map("updated_at") // 最后更新时间
+  strategy            Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade) // 关联策略
+
+  @@map("strategy_states") // 数据库实际表名
+}
+
+// 操作日志表 - 记录系统和用户操作日志
+model OperationLog {
+  id          BigInt    @id @default(autoincrement()) // 日志ID
+  timestamp   DateTime  @default(now()) // 日志时间戳
+  userId      Int? // 关联用户ID(可为空)
+  strategyId  Int? // 关联策略ID(可为空)
+  level       String    @db.VarChar(20) // 日志级别(info/warn/error等)
+  message     String    @db.Text // 日志消息内容
+  context     Json? // 日志上下文(JSON格式附加数据)
+  user        User?     @relation("UserLogs", fields: [userId], references: [id], onDelete: SetNull) // 关联用户
+  strategy    Strategy? @relation("StrategyLogs", fields: [strategyId], references: [id], onDelete: SetNull) // 关联策略
+
+  @@map("operation_logs") // 数据库实际表名
+}

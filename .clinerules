@@ -1,0 +1,64 @@
+# Cline Rules & Project Intelligence for Multi-User Martingale System (Updated 2025-04-09)
+
+## Architectural Decisions
+
+1. **Modular Service Architecture:**
+   - Services: `userService`, `logService`, `strategyService`
+   - Engine: `MartingaleEngine` as standalone component
+   - Pattern: Event-driven communication between components
+
+2. **Database Design:**
+   - MySQL with Prisma ORM
+   - Multi-user data model with proper relations
+   - Sensitive data separation (secrets vs metadata)
+
+3. **Security Implementation:**
+   - API secrets stored in `secrets.json` (gitignored)
+   - Database only stores public key metadata
+   - All operations logged for audit
+
+## Key Implementation Patterns
+
+4. **State Management:**
+   - Database persistence for strategy state
+   - Automatic recovery on restart
+   - Atomic updates via transactions
+
+5. **Error Handling:**
+   - Structured error logging
+   - Critical error recovery procedures
+   - Exchange API error classification
+
+6. **Performance Considerations:**
+   - Staggered order checks
+   - Rate limit handling
+   - Connection pooling
+
+## Project Conventions
+
+7. **Code Organization:**
+   - `src/` structure:
+     - `core/`: Strategy implementations
+     - `services/`: Business logic
+     - `lib/`: Shared utilities
+     - `config/`: Configuration files
+   - Single entry point: `app.js`
+
+8. **Documentation Standards:**
+   - Memory Bank kept up-to-date
+   - Code comments for complex logic
+   - API documentation (future)
+
+## Maintenance Notes
+
+9. **Database Operations:**
+   - Migrations: `npx prisma migrate dev`
+   - Backups: Regular database dumps
+   - Monitoring: Query performance
+
+10. **Deployment Considerations:**
+    - Environment variables for configuration
+    - Process management (PM2/systemd)
+    - Log rotation
+
+*(Last updated: 2025-04-09)*
