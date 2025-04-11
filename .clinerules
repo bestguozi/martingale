@@ -1,4 +1,4 @@
-# Cline Rules & Project Intelligence for Multi-User Martingale System (Updated 2025-04-09)
+# Cline Rules & Project Intelligence for Multi-User Martingale System (Updated 2025-04-11)
 
 ## Architectural Decisions
 
@@ -10,11 +10,12 @@
 2. **Database Design:**
    - MySQL with Prisma ORM
    - Multi-user data model with proper relations
-   - Sensitive data separation (secrets vs metadata)
+   - Sensitive data storage strategy (see Security Implementation)
 
 3. **Security Implementation:**
-   - API secrets stored in `secrets.json` (gitignored)
-   - Database only stores public key metadata
+   - API secrets (Secret Keys) are encrypted using `aes-256-gcm` via `src/lib/crypt.js`.
+   - Encrypted data (including salt, iv, content, tag) is stored in the database alongside public key metadata.
+   - Encryption requires a master password (managed outside the codebase, e.g., environment variable or secure vault).
    - All operations logged for audit
 
 ## Key Implementation Patterns
@@ -60,5 +61,6 @@
     - Environment variables for configuration
     - Process management (PM2/systemd)
     - Log rotation
+    - Secure management of the master encryption password.
 
-*(Last updated: 2025-04-09)*
+*(Last updated: 2025-04-11)*

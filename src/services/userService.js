@@ -1,26 +1,7 @@
 const prisma = require('../lib/prisma');
 const log = require('./logService');
-const crypto = require('crypto');
+const crypt = require('../lib/crypt');
 
-// 加密函数
-function encrypt(text, encryptionKey) {
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(encryptionKey), iv);
-    let encrypted = cipher.update(text);
-    encrypted = Buffer.concat([encrypted, cipher.final()]);
-    return iv.toString('hex') + ':' + encrypted.toString('hex');
-}
-
-// 解密函数
-function decrypt(text, encryptionKey) {
-    const textParts = text.split(':');
-    const iv = Buffer.from(textParts.shift(), 'hex');
-    const encryptedText = Buffer.from(textParts.join(':'), 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(encryptionKey), iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.toString();
-}
 
 /**
  * 更新用户API Key信息
@@ -44,9 +25,9 @@ async function updateUserApiKey(userId, exchangeId, apiKey, apiSecret, apiPasswo
             where: { id: userId },
             data: {
                 exchangeId,
-                apiKey,
-                apiSecret: encrypt(apiSecret, encryptionKey),
-                apiPassword: apiPassword ? encrypt(apiPassword, encryptionKey) : null,
+                apiKey: crypt.encrypt(apiKey, encryptionKey),
+                apiSecret: crypt.encrypt(apiSecret, encryptionKey),
+                apiPassword: crypt.encrypt(apiPassword, encryptionKey),
                 description,
                 isApiActive: true
             }
@@ -71,6 +52,7 @@ async function getUserApiKey(userId) {
         });
 
         if (!user || !user.apiKey) {
+            log.info(`用户 ${userId} 未设置API Key`);
             return null;
         }
 
@@ -78,15 +60,24 @@ async function getUserApiKey(userId) {
         if (!encryptionKey) {
             throw new Error('API_KEY_ENCRYPTION_KEY环境变量未设置');
         }
+        const apiKey = user.apiKey ? crypt.decrypt(user.apiKey) : null;
+        const apiSecret = user.apiSecret ? crypt.decrypt(user.apiSecret) : null;
+        const apiPassword = user.apiPassword ? crypt.decrypt(user.apiPassword) : null;
+        
+        if (user.apiSecret && !apiSecret) {
+            log.error(`用户 ${userId} 的API Secret解密失败`);
+            return null;
+        }
 
         return {
             ...user,
-            apiSecret: user.apiSecret ? decrypt(user.apiSecret, encryptionKey) : null,
-            apiPassword: user.apiPassword ? decrypt(user.apiPassword, encryptionKey) : null
+            apiKey,
+            apiSecret,
+            apiPassword
         };
     } catch (error) {
         log.error(`获取用户 ${userId} API Key信息失败`, error);
-        throw error;
+        return null; // 返回null而不是抛出错误，让调用方能够更优雅地处理
     }
 }
 

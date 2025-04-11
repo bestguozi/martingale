@@ -93,14 +93,13 @@ class MartingaleEngine extends EventEmitter {
                  this.emit('stateUpdate', this.strategyId, { stopLossPrice: this.state.stopLossPrice });
              }
 
-            // TODO: 根据交易所验证未结订单？(更复杂)
-
             log.info(`${this.logPrefix} 初始化完成`, { userId: this.userId, strategyId: this.strategyId });
             return true;
 
         } catch (error) {
             log.error(`${this.logPrefix} 初始化失败`, error, { userId: this.userId, strategyId: this.strategyId });
-            this.emit('error', this.strategyId, error); // Emit error event
+            this.emit('error', this.strategyId, error); 
+            console.log(error);// Emit error event
             return false;
         }
     }
@@ -125,8 +124,18 @@ class MartingaleEngine extends EventEmitter {
 
         // Initial check immediately, then set interval
         this._checkOrdersAndPrice().catch(err => {
-             log.error(`${this.logPrefix} 初始检查失败`, err, { userId: this.userId, strategyId: this.strategyId });
-             this.emit('error', this.strategyId, err);
+             // 确保错误被完整记录，包括堆栈信息
+             log.error(`${this.logPrefix} 初始检查失败`, err, { 
+                 userId: this.userId, 
+                 strategyId: this.strategyId, 
+                 errorMessage: err.message || '未知错误', 
+                 errorStack: err.stack || '没有堆栈信息'
+             });
+             this.emit('error', this.strategyId, {
+                 message: err.message || '初始检查时发生未知错误',
+                 stack: err.stack,
+                 timestamp: new Date().toISOString()
+             });
         });
 
         this.checkIntervalId = setInterval(async () => {
@@ -137,9 +146,20 @@ class MartingaleEngine extends EventEmitter {
             try {
                 await this._checkOrdersAndPrice();
             } catch (error) {
-                 log.error(`${this.logPrefix} 定期检查时发生错误`, error, { userId: this.userId, strategyId: this.strategyId });
-                 this.emit('error', this.strategyId, error); // Emit error event
-                 // Consider if certain errors should stop the engine
+                 // 同样改进定期检查中的错误处理
+                 log.error(`${this.logPrefix} 定期检查时发生错误`, error, { 
+                     userId: this.userId, 
+                     strategyId: this.strategyId,
+                     errorMessage: error.message || '未知错误',
+                     errorStack: error.stack || '没有堆栈信息'
+                 });
+                 this.emit('error', this.strategyId, {
+                     message: error.message || '定期检查时发生未知错误',
+                     stack: error.stack,
+                     timestamp: new Date().toISOString()
+                 });
+                 // 可以考虑在特定错误条件下停止引擎
+                 // if (error.message && error.message.includes('critical')) this.stop();
             }
         }, this.params.checkInterval);
 
@@ -370,51 +390,65 @@ class MartingaleEngine extends EventEmitter {
      * @private
      */
     async _checkOrdersAndPrice() {
+        // 记录调试日志，表明检查循环开始执行
         log.debug(`${this.logPrefix} Running check...`, { userId: this.userId, strategyId: this.strategyId });
 
-        let currentPrice;
+        let currentPrice; // 声明变量存储当前市场价格
         try {
+            // 从交易所API获取当前交易对的价格信息
             const ticker = await this.exchange.fetchTicker(this.symbol);
+            // 提取最新成交价格
             currentPrice = ticker.last;
+            // 如果价格获取失败则抛出错误
             if (!currentPrice) throw new Error('Failed to fetch current price.');
-             log.debug(`${this.logPrefix} Current Price: ${currentPrice}`, { userId: this.userId, strategyId: this.strategyId });
+            // 记录当前价格的调试日志
+            log.debug(`${this.logPrefix} Current Price: ${currentPrice}`, { userId: this.userId, strategyId: this.strategyId });
         } catch (error) {
+            // 记录获取价格时发生的错误
             log.error(`${this.logPrefix} Failed to fetch ticker`, error, { userId: this.userId, strategyId: this.strategyId });
+            // 向上层服务发送错误事件通知
             this.emit('error', this.strategyId, error);
+            // 如果获取价格失败，终止本次检查
             return; // Skip check if price fetch fails
         }
 
-        // 1. 检查止损
+        // 1. 检查止损条件：如果有持仓且价格低于止损线
         if (this.state.positions.length > 0 && currentPrice <= this.state.stopLossPrice) {
+            // 触发止损处理流程
             await this._triggerStopLoss(currentPrice);
+            // 止损后直接结束本次检查
             return; // 止损触发，退出检查
         }
 
-        // 2. 检查未结订单状态(发出检查请求)
-        // 实际检查将由监听此事件的StrategyService完成
-        // 结果通过handleOrderUpdate推送回来
+        // 2. 检查所有未成交订单的状态
+        // 获取所有未成交订单ID列表
         const openOrderIds = Object.keys(this.state.openOrders);
         if (openOrderIds.length > 0) {
-             log.debug(`${this.logPrefix} Requesting status check for ${openOrderIds.length} open order(s).`, { userId: this.userId, strategyId: this.strategyId });
-             this.emit('checkOrdersRequest', this.strategyId, openOrderIds, this.symbol);
+            // 记录准备检查订单状态的日志
+            log.debug(`${this.logPrefix} Requesting status check for ${openOrderIds.length} open order(s).`, { userId: this.userId, strategyId: this.strategyId });
+            // 发出事件请求检查订单状态，通知StrategyService处理
+            this.emit('checkOrdersRequest', this.strategyId, openOrderIds, this.symbol);
         }
-
 
         // 3. 放置初始买单(如果需要)
         if (this.state.positions.length === 0 && openOrderIds.length === 0) {
+            // 检查是否需要放置初始买单
             await this._placeInitialBuyOrderIfNeeded(currentPrice);
         }
         // 4. 检查并放置后续马丁格尔订单(如果需要)
         else if (this.state.positions.length > 0) {
-             // 只有在存在止盈订单(表示上次买单已处理)
-             // 或者完全没有未结订单时(可能是初始状态恢复)才放置下一个马丁格尔订单
+            // 只有在存在止盈订单(表示上次买单已处理)
+            // 或者完全没有未结订单时(可能是初始状态恢复)才放置下一个马丁格尔订单
             if (this.state.takeProfitOrderId || openOrderIds.length === 0) {
+                // 检查并放置马丁格尔订单
                 await this._checkAndPlaceMartinOrders(currentPrice);
             } else {
-                 log.debug(`${this.logPrefix} 在检查下一个马丁格尔层级前等待止盈订单放置`, { userId: this.userId, strategyId: this.strategyId });
+                // 记录调试日志，表明等待止盈订单放置完成
+                log.debug(`${this.logPrefix} 在检查下一个马丁格尔层级前等待止盈订单放置`, { userId: this.userId, strategyId: this.strategyId });
             }
         }
-         log.debug(`${this.logPrefix} Check finished.`, { userId: this.userId, strategyId: this.strategyId });
+        // 记录调试日志，表明检查循环结束
+        log.debug(`${this.logPrefix} Check finished.`, { userId: this.userId, strategyId: this.strategyId });
     }
 
      /**

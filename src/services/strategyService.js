@@ -55,7 +55,7 @@ async function startStrategyInstance(strategy) {
             exchangeOptions.password = userApiKey.apiPassword;
         }
         exchange = new ccxt[userApiKey.exchangeId](exchangeOptions);
-        exchange.set_sandbox_mode(); // 设置沙盒模式
+        exchange.set_sandbox_mode(true); // 设置沙盒模式
     } catch (error) {
         log.error(`为策略 ${strategyId} 在交易所 ${userApiKey.exchangeId} 初始化CCXT失败`, error, { userId, strategyId });
         await updateStrategyState(strategyId, { isRunning: false, lastError: `CCXT初始化失败: ${error.message}` });
@@ -248,30 +248,73 @@ function attachEngineListeners(engine) {
  */
 async function updateStrategyState(strategyId, stateUpdate) {
     try {
-        // 安全解析数值的辅助函数
-        const parseNum = (val) => (val === null || val === undefined || isNaN(parseFloat(val))) ? null : parseFloat(val);
+        // 安全解析数值的辅助函数 - 确保返回数字或默认值0（不返回null）
+        const parseNum = (val) => {
+            const parsed = parseFloat(val);
+            return (!isNaN(parsed)) ? parsed : 0;  // 返回0而不是null
+        };
         
         // 准备要更新的数据
-        const dataToUpdate = {
-            isRunning: stateUpdate.isRunning,
-            openOrders: stateUpdate.openOrders,
-            positions: stateUpdate.positions,
-            martinLevels: stateUpdate.martinLevels,
-            martinAmounts: stateUpdate.martinAmounts,
-            totalInvested: parseNum(stateUpdate.totalInvested),
-            totalAmount: parseNum(stateUpdate.totalAmount),
-            averageCost: parseNum(stateUpdate.averageCost),
-            takeProfitPrice: parseNum(stateUpdate.takeProfitPrice),
-            stopLossPrice: parseNum(stateUpdate.stopLossPrice),
-            takeProfitOrderId: stateUpdate.takeProfitOrderId,
-            lastError: stateUpdate.lastError,
-        };
-
-        // 移除未定义的属性
-        Object.keys(dataToUpdate).forEach(key => dataToUpdate[key] === undefined && delete dataToUpdate[key]);
+        const dataToUpdate = {};
+        
+        // 布尔值字段
+        if (stateUpdate.isRunning !== undefined) {
+            dataToUpdate.isRunning = Boolean(stateUpdate.isRunning);
+        }
+        
+        // JSON类型字段，确保有效的JSON或null
+        if (stateUpdate.openOrders !== undefined) {
+            dataToUpdate.openOrders = stateUpdate.openOrders || {};
+        }
+        
+        if (stateUpdate.positions !== undefined) {
+            dataToUpdate.positions = stateUpdate.positions || {};
+        }
+        
+        if (stateUpdate.martinLevels !== undefined) {
+            dataToUpdate.martinLevels = stateUpdate.martinLevels || {};
+        }
+        
+        if (stateUpdate.martinAmounts !== undefined) {
+            dataToUpdate.martinAmounts = stateUpdate.martinAmounts || {};
+        }
+        
+        // Decimal类型字段，确保有效数字
+        if (stateUpdate.totalInvested !== undefined) {
+            dataToUpdate.totalInvested = parseNum(stateUpdate.totalInvested);
+        }
+        
+        if (stateUpdate.totalAmount !== undefined) {
+            dataToUpdate.totalAmount = parseNum(stateUpdate.totalAmount);
+        }
+        
+        if (stateUpdate.averageCost !== undefined) {
+            dataToUpdate.averageCost = parseNum(stateUpdate.averageCost);
+        }
+        
+        // Decimal类型可为null的字段
+        if ('takeProfitPrice' in stateUpdate) {
+            dataToUpdate.takeProfitPrice = stateUpdate.takeProfitPrice !== null ? 
+                parseFloat(stateUpdate.takeProfitPrice) : null;
+        }
+        
+        if ('stopLossPrice' in stateUpdate) {
+            dataToUpdate.stopLossPrice = stateUpdate.stopLossPrice !== null ? 
+                parseFloat(stateUpdate.stopLossPrice) : null;
+        }
+        
+        // String类型字段
+        if ('takeProfitOrderId' in stateUpdate) {
+            dataToUpdate.takeProfitOrderId = stateUpdate.takeProfitOrderId || null;
+        }
+        
+        if ('lastError' in stateUpdate) {
+            dataToUpdate.lastError = stateUpdate.lastError || null;
+        }
 
         if (Object.keys(dataToUpdate).length > 0) {
-             log.debug(`更新策略 ${strategyId} 的数据库状态`, { dataToUpdate });
+            log.debug(`更新策略 ${strategyId} 的数据库状态`, { dataToUpdate });
+            
             // 使用upsert创建状态(如果尚不存在)
             await prisma.strategyState.upsert({
                 where: { strategyId: strategyId },
@@ -284,6 +327,7 @@ async function updateStrategyState(strategyId, stateUpdate) {
         }
     } catch (error) {
         log.error(`更新策略 ${strategyId} 的数据库状态失败`, error, { stateUpdate });
+        throw error; // 重新抛出错误，让调用方可以处理
     }
 }
 

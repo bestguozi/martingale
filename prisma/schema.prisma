@@ -17,8 +17,8 @@ model User {
   // passwordHash String? // 预留字段：密码哈希(如需用户登录)
   exchangeId  String?  @map("exchange_id") // 关联的交易所ID
   apiKey      String?  // 交易所API公钥(公开可分享)
-  apiSecret   String?  // 加密存储的交易所API私钥
-  apiPassword String?  // 加密存储的交易所API密码(如需)
+  apiSecret   String? @db.Text // 加密存储的交易所API私钥 (使用TEXT类型以容纳加密后的长度)
+  apiPassword String? @db.Text // 加密存储的交易所API密码(如需) (同样改为TEXT以防万一)
   description String?  // 用户描述信息
   isApiActive Boolean  @default(true) @map("is_api_active") // API是否激活
   createdAt   DateTime @default(now()) @map("created_at") // 创建时间
